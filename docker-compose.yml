@@ -1,0 +1,61 @@
+version: "3.9"
+
+# ECHO docker-compose — non-SIFT fallback.
+#
+# Use ./install.sh on a real SIFT VM whenever possible. This file is for
+# judges who want to spin up ECHO in 90 seconds on any docker host.
+#
+# Usage:
+#     docker compose up --build
+#     docker compose run --rm echo run --case-id CASE_001
+#
+# Mounts:
+#     ./samples → /mnt/cases (read-only)  ← drop your case dirs in samples/
+#     ./audit   → /app/audit
+#     ./findings → /app/findings
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: echo-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    # Pull the model on first startup
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama serve &
+        SERVE_PID=$$!
+        until curl -sf http://localhost:11434/api/tags >/dev/null; do sleep 1; done
+        ollama pull qwen2.5:7b-instruct-q4_K_M
+        wait $$SERVE_PID
+
+  echo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: echo-agent
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      ECHO_MODEL: qwen2.5:7b-instruct-q4_K_M
+      ECHO_CASE_ROOT: /mnt/cases
+    volumes:
+      - ./samples:/mnt/cases:ro
+      - ./audit:/app/audit
+      - ./findings:/app/findings
+    working_dir: /app
+    # Default command: prove tests pass; user overrides for real runs.
+    command: ["pytest", "tests/unit", "tests/spoliation", "-v"]
+
+volumes:
+  ollama_models:

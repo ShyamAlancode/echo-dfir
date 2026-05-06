@@ -1,0 +1,57 @@
+{
+  "case_id": "CASE_001_synthetic",
+  "scenario": "Phishing → service persistence → process injection → credential theft → lateral movement",
+  "ground_truth_locked_at": "2026-05-06T00:00:00Z",
+  "findings": [
+    {
+      "id": "F-CASE_001-001",
+      "title": "Spear-phishing macro execution from Q4_Invoice.docm",
+      "description": "User j.morgan opened a malicious Office document containing a macro that spawned powershell.exe.",
+      "mitre_technique_ids": ["T1566.001", "T1059.001", "T1204.002"],
+      "iocs": [
+        {"type": "file_path", "value": "c:\\users\\j.morgan\\downloads\\q4_invoice.docm"},
+        {"type": "sha256", "value": "f1d9b3a2c4e5687a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6a7b8c"}
+      ]
+    },
+    {
+      "id": "F-CASE_001-002",
+      "title": "Malicious service EvtSysSvc registered for persistence",
+      "description": "A service named EvtSysSvc was registered pointing to C:\\Windows\\Temp\\svchost_helper.exe (T1543.003).",
+      "mitre_technique_ids": ["T1543.003"],
+      "iocs": [
+        {"type": "registry_key", "value": "system\\controlset001\\services\\evtsyssvc"},
+        {"type": "file_path", "value": "c:\\windows\\temp\\svchost_helper.exe"}
+      ]
+    },
+    {
+      "id": "F-CASE_001-003",
+      "title": "Process injection into svchost.exe from powershell.exe",
+      "description": "malfind detected an RWX VAD region in svchost.exe (PID 1488) with shellcode signature consistent with Cobalt Strike beacon. PSScan found a process powershell.exe (PID 4096) not present in PSList — DKOM-hidden parent.",
+      "mitre_technique_ids": ["T1055", "T1055.012"],
+      "iocs": [
+        {"type": "ipv4", "value": "185.220.101.42"},
+        {"type": "domain", "value": "cdn-finance-update.io"}
+      ]
+    },
+    {
+      "id": "F-CASE_001-004",
+      "title": "Credential theft via mimikatz_x64.exe",
+      "description": "AmCache and Prefetch both record execution of mimikatz_x64.exe from C:\\Windows\\Temp\\.",
+      "mitre_technique_ids": ["T1003.001"],
+      "iocs": [
+        {"type": "file_path", "value": "c:\\windows\\temp\\mimikatz_x64.exe"},
+        {"type": "sha1", "value": "e8a9f1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8"}
+      ]
+    },
+    {
+      "id": "F-CASE_001-005",
+      "title": "Lateral movement attempt via RDP to 10.10.20.5",
+      "description": "Event ID 4624 type 10 from j.morgan to 10.10.20.5; netscan shows TCP/3389 connection from PID 4096.",
+      "mitre_technique_ids": ["T1021.001", "T1078.002"],
+      "iocs": [
+        {"type": "ipv4", "value": "10.10.20.5"},
+        {"type": "user_account", "value": "j.morgan"}
+      ]
+    }
+  ]
+}

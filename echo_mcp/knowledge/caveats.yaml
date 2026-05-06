@@ -1,0 +1,144 @@
+# ECHO Forensic Knowledge Caveats
+#
+# Every tool response is wrapped with caveats and cross-check hints so the
+# LLM cannot make claims the underlying data cannot support. This is the
+# forensic-knowledge equivalent of a typed schema.
+#
+# Each entry: tool_name -> { caveats: [{severity, text}, ...],
+#                            cross_check_hints: [{hint, suggested_tool}, ...] }
+#
+# Severities: low | medium | high | critical
+
+windows.pslist:
+  caveats:
+    - severity: high
+      text: "pslist walks the active EPROCESS doubly-linked list. A rootkit that unlinks an entry will hide that process from this output. Always cross-check with windows.psscan."
+    - severity: medium
+      text: "Process create_time has 1-second granularity in Windows kernel structures; ordering near boot may be ambiguous."
+  cross_check_hints:
+    - hint: "Diff PIDs against psscan to surface DKOM-hidden processes."
+      suggested_tool: "windows.psscan"
+    - hint: "If a process has unusual parent (e.g. explorer.exe spawning powershell.exe), check Event ID 4688 process creation logs."
+      suggested_tool: "evtx_parse"
+
+windows.psscan:
+  caveats:
+    - severity: medium
+      text: "psscan scans pool tags and may surface terminated processes whose pool memory is not yet reused. Recently-exited processes will appear here but not in pslist — that is normal, not a rootkit signal alone."
+    - severity: low
+      text: "Pool-tag scanning has a small false-positive rate on heavily-fragmented memory."
+  cross_check_hints:
+    - hint: "PIDs in psscan but missing from pslist are candidate hidden processes."
+      suggested_tool: "windows.pslist"
+
+windows.malfind:
+  caveats:
+    - severity: high
+      text: "malfind detects executable, writable, non-image-backed memory regions — a strong-but-noisy injection signal. Browsers and JIT engines (Chrome, Edge, .NET) trip this routinely; always confirm with Vad protections and disassembly."
+  cross_check_hints:
+    - hint: "Confirm injection by checking the parent process and command line."
+      suggested_tool: "windows.cmdline"
+
+windows.netscan:
+  caveats:
+    - severity: high
+      text: "netscan resolves the owning PID via pool scanning. If the owner is not in pslist+psscan, the connection is orphaned — investigate before assuming benign."
+    - severity: medium
+      text: "Local-loopback connections (127.0.0.1) are common and rarely indicate compromise on their own."
+  cross_check_hints:
+    - hint: "If owner PID is unresolved, the process may be hidden — investigate with psscan."
+      suggested_tool: "windows.psscan"
+
+windows.cmdline:
+  caveats:
+    - severity: medium
+      text: "cmdline is read from process PEB; a process can blank or overwrite its own PEB (process hollowing / cmdline spoofing). Trust cmdline only when corroborated by Event ID 4688."
+  cross_check_hints:
+    - hint: "Compare cmdline output with EvtxECmd Event ID 4688 records for the same PID."
+      suggested_tool: "evtx_parse"
+
+windows.dlllist:
+  caveats:
+    - severity: medium
+      text: "dlllist enumerates loaded modules from the PEB. An attacker that performs reflective injection without going through the loader will not appear here — malfind is the cross-check."
+  cross_check_hints:
+    - hint: "Suspicious DLLs from non-standard paths warrant a malfind cross-check on that PID."
+      suggested_tool: "windows.malfind"
+
+windows.mftscan:
+  caveats:
+    - severity: medium
+      text: "Memory-resident MFT records may be incomplete; the on-disk $MFT is authoritative."
+  cross_check_hints:
+    - hint: "If a suspicious filename appears, check on-disk MFT for the canonical record."
+      suggested_tool: "mft_parse"
+
+regripper.appcompatcache:
+  caveats:
+    - severity: medium
+      text: "ShimCache (AppCompatCache) records executable paths the OS evaluated for compatibility shims. It is execution-adjacent evidence — strong but NOT proof of execution. Pair with Prefetch or Event ID 4688 for execution proof."
+  cross_check_hints:
+    - hint: "Confirm execution via Prefetch or Event ID 4688."
+      suggested_tool: "prefetch_parse"
+
+regripper.amcache:
+  caveats:
+    - severity: low
+      text: "AmCache records first-run timestamps and SHA1 hashes for executables seen by the Application Experience service. It is one of the strongest disk-existence artifacts on Windows 8+."
+    - severity: medium
+      text: "AmCache lookups depend on hive availability and hive timestamps; confirm first_run via Prefetch when the binary is small/short-running."
+  cross_check_hints:
+    - hint: "If AmCache shows a path but Prefetch does not, investigate why execution evidence is asymmetric."
+      suggested_tool: "prefetch_parse"
+
+regripper.run:
+  caveats:
+    - severity: medium
+      text: "Run/RunOnce keys persist across reboots. Many legitimate vendors use them; novelty is the signal."
+  cross_check_hints:
+    - hint: "Cross-reference Run-key target paths with AmCache to confirm the binary exists on disk."
+      suggested_tool: "regripper.amcache"
+
+regripper.services:
+  caveats:
+    - severity: high
+      text: "Service installations are a primary persistence vector (T1543.003). New services with system-wide privileges deserve high scrutiny."
+  cross_check_hints:
+    - hint: "Correlate new services with Event ID 7045 (service installed)."
+      suggested_tool: "evtx_parse"
+
+evtx_parse:
+  caveats:
+    - severity: high
+      text: "Event log clearance (ID 1102) and process-creation logging (ID 4688) require auditing to be enabled — absence of records is NOT proof the events did not occur."
+    - severity: medium
+      text: "PowerShell ScriptBlock logging (ID 4104) is only present if 'Module Logging' was enabled prior to the activity."
+  cross_check_hints:
+    - hint: "If 4688 cmdline differs from windows.cmdline output, the live process spoofed its PEB."
+      suggested_tool: "windows.cmdline"
+
+prefetch_parse:
+  caveats:
+    - severity: medium
+      text: "Prefetch is disabled on SSDs by default in some Windows builds — absence is not proof of non-execution."
+    - severity: low
+      text: "Prefetch retains up to 8 last-run timestamps (Win10+); older runs are aged out."
+  cross_check_hints:
+    - hint: "If a binary has Prefetch but no AmCache entry, check whether the AmCache hive is corrupted or aged."
+      suggested_tool: "regripper.amcache"
+
+mft_parse:
+  caveats:
+    - severity: medium
+      text: "Standard Information ($SI) timestamps are user-modifiable (timestomping). Filename ($FN) timestamps are kernel-controlled and harder to forge — discrepancies are a red flag."
+  cross_check_hints:
+    - hint: "Compare $SI vs $FN timestamps to detect timestomping (T1070.006)."
+      suggested_tool: "mft_parse"
+
+bulk_extractor_run:
+  caveats:
+    - severity: low
+      text: "bulk_extractor finds candidate IOCs by regex/heuristic — ALL hits require source-context confirmation before being claimed as IOCs."
+  cross_check_hints:
+    - hint: "Confirm extracted IPs/domains against netscan or DNS-cache event logs."
+      suggested_tool: "windows.netscan"
