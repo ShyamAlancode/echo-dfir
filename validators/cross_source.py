@@ -244,11 +244,28 @@ def rule_r04_event4688_anomaly(
                 "ts": c.get("timestamp"),
             })
 
-    # Limit noise — only flag if 3+ such events for the same image
+    # FIX — flag any execution from outside system directories
+    # Single execution from a temp or user directory is more suspicious
+    # than 10 executions of cmd.exe from System32
+    SYSTEM_DIRS = {
+        "system32", "syswow64", "program files", "program files (x86)",
+        "windows", "microsoft.net", "windowsapps",
+    }
+
+    def _is_system_path(path: str) -> bool:
+        p = (path or "").lower().replace("\\", "/")
+        return any(sd in p for sd in SYSTEM_DIRS)
+
+    # Flag if: NOT from a system directory (suspicious regardless of count)
+    # OR: from a system directory but seen 3+ times with no pslist match (unusual)
     from collections import Counter
     name_counts = Counter((_basename(r["new_process"]) or "").lower() for r in rare)
-    interesting_names = {n for n, c in name_counts.items() if c >= 3}
-    artifacts = [r for r in rare if (_basename(r["new_process"]) or "").lower() in interesting_names]
+
+    artifacts = [
+        r for r in rare
+        if not _is_system_path(r.get("new_process") or "")
+        or name_counts[(_basename(r["new_process"]) or "").lower()] >= 3
+    ]
 
     if not artifacts:
         return None

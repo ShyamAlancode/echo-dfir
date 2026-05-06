@@ -122,16 +122,18 @@ def finalizer_node(
     findings: list[Finding] = []
     head = head_hash(audit_log_path)
 
-    has_high_caveat = any(
-        any(cv.severity == Severity.HIGH for cv in r.caveats)
-        for r in tool_cache.values()
-    )
-
     for idx, prop in enumerate(out.findings, start=1):
         srcs_in_cache = [s for s in prop.sources if s in tool_cache]
         if not srcs_in_cache:
             log.warning("finalizer: dropping finding %r — no source in cache", prop.title)
             continue
+
+        # FIX: compute caveat penalty per-finding, not globally
+        has_high_caveat = any(
+            any(cv.severity == Severity.HIGH for cv in tool_cache[s].caveats)
+            for s in srcs_in_cache
+            if s in tool_cache
+        )
 
         # contradictions touching these sources count against confidence
         contras_touching = [
@@ -142,7 +144,7 @@ def finalizer_node(
         label, score = confidence_for(
             sources_count=len(srcs_in_cache),
             contradictions_count=len(contras_touching),
-            has_caveat_high=has_high_caveat,
+            has_caveat_high=has_high_caveat,   # now per-finding
         )
         status = status_for(label)
 

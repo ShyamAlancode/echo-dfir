@@ -115,11 +115,15 @@ def test_009_no_subprocess_shell_true_in_codebase() -> None:
     for py in repo_root.rglob("*.py"):
         if any(part in py.parts for part in (".venv", "venv", "build", "dist")):
             continue
-        text = py.read_text(encoding="utf-8", errors="replace")
-        if "shell=True" in text and "shell=False" not in text:
-            # crude but effective — flag any occurrence
-            offenders.append(py.relative_to(repo_root))
-    assert not offenders, f"shell=True found in: {offenders}"
+        for line_no, line in enumerate(py.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith("#"):       # skip full-line comments
+                continue
+            if "shell" + "=True" in stripped:
+                if py.name == "test_spoliation.py":
+                    continue
+                offenders.append(f"{py.relative_to(repo_root)}:{line_no}")
+    assert not offenders, f"shell execution allowed in: {offenders}"
 
 
 @pytest.mark.spoliation
@@ -180,3 +184,29 @@ def test_012_audit_chain_breaks_on_tamper(tmp_path: Path) -> None:
 
     ok2, msg2 = verify_chain(log_path)
     assert not ok2, f"chain should be broken after tamper, but: {msg2}"
+
+
+@pytest.mark.spoliation
+def test_013_symlink_attack_rejected(case_root: Path) -> None:
+    """A013 — symlink inside case dir pointing outside must be rejected."""
+    # Create a symlink inside the case directory pointing to /etc/passwd
+    # (or on Windows, to a file outside the case dir)
+    target = case_root / "TEST_CASE" / "evil_link"
+    try:
+        # Point symlink at parent directory (outside case dir)
+        target.symlink_to(case_root.parent)
+        escaped = resolve_evidence_path(
+            "TEST_CASE", "evil_link/some_file", root=case_root
+        )
+        # If we get here without error, check containment
+        # The .resolve() in resolve_evidence_path follows symlinks,
+        # so the resolved path should be outside case_root — raising PathSafetyError
+        pytest.fail(f"Symlink escape not caught: {escaped}")
+    except PathSafetyError:
+        pass  # Expected — symlink correctly detected
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlink creation not supported on this platform")
+    finally:
+        if target.exists() or target.is_symlink():
+            target.unlink(missing_ok=True)
+

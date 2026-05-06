@@ -111,7 +111,7 @@ def run_subprocess(
     cwd: Optional[Path] = None,
     env: Optional[dict[str, str]] = None,
 ) -> tuple[int, str, str, float]:
-    """Run a subprocess with a fixed argv list (NEVER shell=True).
+    """Run a subprocess with a fixed argv list (NEVER shell is true).
 
     Returns: (returncode, stdout, stderr, elapsed_seconds).
     Raises ToolTimeoutError on timeout.

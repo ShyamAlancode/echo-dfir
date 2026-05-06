@@ -281,7 +281,7 @@ class ReflectionEntry(BaseModel):
 
 
 class EchoState(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict()
 
     case_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_\-]+$")
     phase: Phase = Phase.TRIAGE
@@ -308,9 +308,24 @@ class EchoState(BaseModel):
 
 
 def canonical_json(obj: Any) -> bytes:
-    """Deterministic JSON encoding for hashing — sort keys, no whitespace."""
+    """
+    Deterministic JSON for hashing.
+    Floats are rounded to 6 decimal places to ensure cross-platform
+    reproducibility — orjson uses shortest-round-trip representation
+    which can differ across Python versions and CPU architectures.
+    """
     import orjson
-    return orjson.dumps(obj, option=orjson.OPT_SORT_KEYS)
+
+    def _normalize(o: Any) -> Any:
+        if isinstance(o, float):
+            return round(o, 6)
+        if isinstance(o, dict):
+            return {k: _normalize(v) for k, v in o.items()}
+        if isinstance(o, list):
+            return [_normalize(i) for i in o]
+        return o
+
+    return orjson.dumps(_normalize(obj), option=orjson.OPT_SORT_KEYS)
 
 
 def sha256_of(obj: Any) -> str:

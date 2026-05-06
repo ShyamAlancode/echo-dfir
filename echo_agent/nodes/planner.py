@@ -83,6 +83,12 @@ def _state_summary(s: EchoState) -> str:
 
 def planner_node(state: EchoState) -> EchoState:
     """Decide next phase. Mutates state.phase, state.plan."""
+    # Check budget before doing anything
+    if state.tokens_used >= state.budget_tokens:
+        state.phase = Phase.FINALIZE
+        state.halt_reason = "token_budget_exhausted"
+        return state
+
     if state.iter == 0:
         state.phase = Phase.TRIAGE
         state.plan.append("iter=0: triage (always)")

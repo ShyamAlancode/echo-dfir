@@ -74,6 +74,7 @@ def build_graph(
     # ----- node wrappers that update the audit chain on entry/exit ---------
 
     def _logged_planner(state: EchoState) -> EchoState:
+        state.iter += 1  # increment FIRST
         audit.case_id = state.case_id
         before = state.model_dump()
         state = planner_node(state)
@@ -82,7 +83,6 @@ def build_graph(
             input_obj=before, output_obj=state.model_dump(),
             tokens_used=state.tokens_used,
         )
-        state.iter += 1  # iter counts each planner invocation
         return state
 
     def _logged_executor(state: EchoState) -> EchoState:
@@ -163,8 +163,7 @@ def build_graph(
         if state.phase == Phase.FINALIZE:
             return "finalizer"
         if _budget_tripped(state, started_wall):
-            state.halt_reason = "budget_or_wallclock_exceeded"
-            return "finalizer"
+            return "finalizer"   # halt_reason set inside planner node instead
         return "executor"
 
     def _after_validator(state: EchoState) -> str:
