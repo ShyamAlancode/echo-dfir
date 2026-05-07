@@ -12,11 +12,12 @@ from echo_mcp.schemas import EchoState, Phase
 @pytest.mark.adversarial
 def test_token_budget_exhaustion_forces_halt() -> None:
     """Agent halts when token budget is exceeded."""
+    from echo_mcp.schemas import EchoState
     state = EchoState(
         case_id="BUDGET_TEST",
         budget_tokens=1000,
         tokens_used=1001,
-        max_iter=100,
+        max_iter=32,
     )
     assert state.budget_exhausted() is True
 
