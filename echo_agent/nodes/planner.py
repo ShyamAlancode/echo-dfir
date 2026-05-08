@@ -51,6 +51,9 @@ GUIDANCE:
 - If iter >= max_iter - 1, choose "finalize".
 - Reflection memory entries are lessons from previous iterations of THIS
   case — treat them as authoritative.
+- CRITICAL RULE: If the same tool has already been used in a previous iteration,
+  you MUST choose a different phase to avoid repeating the same tool.
+  Tools already used this case: {already_used_tools}
 
 Respond as ONE JSON object matching the requested schema. No prose.
 """
@@ -70,6 +73,9 @@ def _state_summary(s: EchoState) -> str:
         for f in s.findings
     ) or "  (none yet)"
 
+    already_used = list(s.tool_cache.keys()) if s.tool_cache else []
+    already_used_str = ", ".join(already_used) if already_used else "none"
+
     return (
         f"case_id: {s.case_id}\n"
         f"iter: {s.iter}/{s.max_iter}\n"
@@ -78,6 +84,7 @@ def _state_summary(s: EchoState) -> str:
         f"contradictions:\n{contras}\n"
         f"findings_so_far:\n{findings}\n"
         f"reflection_memory:\n{refl}\n"
+        f"already_used_tools: {already_used_str}\n"
     )
 
 
@@ -109,9 +116,12 @@ def planner_node(state: EchoState) -> EchoState:
     )
 
     try:
+        already_used = list(state.tool_cache.keys()) if state.tool_cache else []
+        already_used_str = ", ".join(already_used) if already_used else "none"
+
         out, tokens = chat_json(
             schema=PlannerOutput,
-            system=PLANNER_SYSTEM,
+            system=PLANNER_SYSTEM.format(already_used_tools=already_used_str),
             user=user_msg,
             num_predict=512,
         )
@@ -122,6 +132,21 @@ def planner_node(state: EchoState) -> EchoState:
         return state
 
     state.phase = Phase(out.next_phase)
+
+    # Prevent repeating the same tool — if we're in memory phase and
+    # malfind already ran, switch to triage to get pslist+psscan instead
+    already_used = list(state.tool_cache.keys()) if state.tool_cache else []
+    _PHASE_DEFAULTS = {
+        Phase.MEMORY:  "windows.malfind",
+        Phase.TRIAGE:  "windows.pslist",
+        Phase.NETWORK: "windows.netscan",
+    }
+    default_tool = _PHASE_DEFAULTS.get(state.phase)
+    if default_tool and default_tool in already_used:
+        # This phase's default tool already ran — pick the next phase
+        state.phase = _next_phase_default(state.phase)
+        log.info("planner: tool %s already used, advancing to %s", default_tool, state.phase)
+
     state.tokens_used += tokens
     state.plan.append(
         f"iter={state.iter}: {state.phase.value} — {out.rationale[:120]}"
@@ -137,8 +162,17 @@ _DEFAULT_PROGRESSION: list[Phase] = [
 
 
 def _next_phase_default(current: Phase) -> Phase:
+    """Cycle through phases sequentially to avoid getting stuck."""
+    cycle = [
+        Phase.TRIAGE,
+        Phase.MEMORY,
+        Phase.NETWORK,
+        Phase.EVENTS,
+        Phase.REGISTRY,
+        Phase.DISK,
+    ]
     try:
-        idx = _DEFAULT_PROGRESSION.index(current)
-        return _DEFAULT_PROGRESSION[min(idx + 1, len(_DEFAULT_PROGRESSION) - 1)]
+        idx = cycle.index(current)
+        return cycle[(idx + 1) % len(cycle)]
     except ValueError:
-        return Phase.MEMORY
+        return Phase.TRIAGE

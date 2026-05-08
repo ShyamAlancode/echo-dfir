@@ -66,7 +66,7 @@ def chat_json(
                 {"role": "system", "content": system},
                 {"role": "user", "content": user + extra_user},
             ],
-            format=json_schema,           # grammar-constrained
+            # format=json_schema,           # grammar-constrained (removed to fix crash)
             options={
                 "temperature": temperature,
                 "num_predict": num_predict,
