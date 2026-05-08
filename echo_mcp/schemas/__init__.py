@@ -297,6 +297,7 @@ class EchoState(BaseModel):
     findings: list[Finding] = Field(default_factory=list)
     contradictions: list[Contradiction] = Field(default_factory=list)
     reflection_memory: list[ReflectionEntry] = Field(default_factory=list)
+    tool_cache: dict[str, Any] = Field(default_factory=dict)
     needs_revision: bool = False
     halt_reason: Optional[str] = None
 
