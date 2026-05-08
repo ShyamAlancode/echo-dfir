@@ -67,6 +67,10 @@ RULES:
   tool data provided.
 - DO NOT pick a confidence level. The system computes that.
 - If a contradiction is unresolved, mention it in the description.
+- Each finding MUST use exactly these field names:
+  title (string), description (string), sources (list of strings).
+  Do NOT use 'finding' or 'source'.
+  Example: {"title": "Process Injection", "description": "...", "sources": ["windows.malfind"]}
 
 Output ONE JSON object: {findings: [...]}.
 """
